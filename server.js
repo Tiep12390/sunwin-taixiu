@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 const PORT = process.env.PORT || 5000;
 
-// === Biến lưu trạng thái ===
+// === Trạng thái hiện tại ===
 let currentData = {
   id: "binhtool90",
   id_phien: null,
@@ -14,10 +14,11 @@ let currentData = {
   pattern: "",
   du_doan: "?"
 };
-let id_phien_chua_co_kq = null;
-let patternHistory = []; // Lưu dãy T/X gần nhất
 
-// === Danh sách tin nhắn gửi lên server WebSocket ===
+let id_phien_chua_co_kq = null;
+let patternHistory = [];
+
+// === Tin nhắn login / subscribe ===
 const messagesToSend = [
   [1, "MiniGame", "SC_anhlatrumapi1", "binhtool90", {
     "info": "{\"ipAddress\":\"2001:ee0:5709:2720:7ba7:fb19:d038:aa91\",\"wsToken\":\"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhbW91bnQiOjAsImdlbmRlciI6MCwiZGlzcGxheU5hbWUiOiJ0YW9sYWJpbmgxMjk5IiwicGhvbmVWZXJpZmllZCI6ZmFsc2UsImJvdCI6MCwiYXZhdGFyIjoiaHR0cHM6Ly9pbWFnZXMuc3dpbnNob3AubmV0L2ltYWdlcy9hdmF0YXIvYXZhdGFyXzAyLnBuZyIsInVzZXJJZCI6IjZhNWNmN2NmLTQ0ODYtNGJlNS1hMDIzLTUyOTkyOGUyZDg1YyIsInJlZ1RpbWUiOjE3NTI3NjcyOTk2OTgsInBob25lIjoiIiwiY3VzdG9tZXJJZCI6MjgzNTEyODQ1LCJicmFuZCI6InN1bi53aW4iLCJ1c2VybmFtZSI6IlNDX2FuaGxhdHJ1bWFwaTEiLCJ0aW1lc3RhbXAiOjE3NTI3ODczMDg2NTl9.5PQjsPsm2G7SyEnAbNqXtxkxYlMQIwcJpxjh1l_hH6c\",\"userId\":\"6a5cf7cf-4486-4be5-a023-529928e2d85c\",\"username\":\"SC_anhlatrumapi1\",\"timestamp\":1752787308659}",
@@ -27,26 +28,43 @@ const messagesToSend = [
   [6, "MiniGame", "lobbyPlugin", { cmd: 10001 }]
 ];
 
+// === Thuật toán Markov nâng cao ===
+function duDoanTiepTheo(pattern) {
+  if (pattern.length < 6) return "?";
+
+  const markov = {};
+  for (let i = 0; i < pattern.length - 3; i++) {
+    const key = pattern.slice(i, i + 3).join('');
+    const next = pattern[i + 3];
+    if (!markov[key]) markov[key] = { T: 0, X: 0 };
+    markov[key][next]++;
+  }
+
+  const recent = pattern.slice(-3).join('');
+  const predictObj = markov[recent];
+
+  if (predictObj) {
+    if (predictObj.T > predictObj.X) return "T";
+    if (predictObj.X > predictObj.T) return "X";
+  }
+
+  // Fallback logic nếu không có trong mô hình
+  const last4 = pattern.slice(-4).join('');
+  const count4 = pattern.join('').split(last4).length - 1;
+  if (count4 >= 2) return last4[0];
+
+  const last2 = pattern.slice(-2).join('');
+  const count2 = pattern.join('').split(last2).length - 1;
+  if (count2 >= 3) return last2[0];
+
+  return "?";
+}
+
 // === WebSocket ===
 let ws = null;
 let pingInterval = null;
 let reconnectTimeout = null;
 let isManuallyClosed = false;
-
-function duDoanTiepTheo(pattern) {
-  if (pattern.length < 6) return "?";
-
-  const last3 = pattern.slice(-3).join('');
-  const last4 = pattern.slice(-4).join('');
-
-  const count = pattern.join('').split(last3).length - 1;
-  if (count >= 2) return last3[0];
-
-  const count4 = pattern.join('').split(last4).length - 1;
-  if (count4 >= 2) return last4[0];
-
-  return "?";
-}
 
 function connectWebSocket() {
   ws = new WebSocket(
@@ -60,7 +78,7 @@ function connectWebSocket() {
   );
 
   ws.on('open', () => {
-    console.log('[✅] Đã kết nối WebSocket');
+    console.log('[✅] Kết nối WebSocket thành công');
     messagesToSend.forEach((msg, i) => {
       setTimeout(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -127,11 +145,11 @@ function connectWebSocket() {
   });
 
   ws.on('error', (err) => {
-    console.error('[⚠️] WebSocket lỗi:', err.message);
+    console.error('[⚠️] Lỗi WebSocket:', err.message);
   });
 }
 
-// === API ===
+// === API Endpoint ===
 app.get('/taixiu', (req, res) => {
   res.json(currentData);
 });
@@ -140,7 +158,7 @@ app.get('/', (req, res) => {
   res.send(`<h2>🎯 SunWin Tài Xỉu</h2><p><a href="/taixiu">Xem JSON kết quả</a></p>`);
 });
 
-// === Khởi động server ===
+// === Khởi động Server ===
 app.listen(PORT, () => {
   console.log(`[🌐] Server đang chạy tại http://localhost:${PORT}`);
   connectWebSocket();
